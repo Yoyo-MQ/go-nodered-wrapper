@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 )
 
 func TestNew(t *testing.T) {

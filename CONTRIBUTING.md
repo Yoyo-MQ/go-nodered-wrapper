@@ -14,7 +14,7 @@ Thank you for your interest in contributing to the Yoyo Node-RED Wrapper! This d
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/yourusername/yoyo-nodered-wrapper.git
+   git clone https://github.com/yoyo-mq/go-nodered-wrapper.git
    cd yoyo-nodered-wrapper
    ```
 

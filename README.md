@@ -14,7 +14,7 @@ A high-level Go wrapper for managing Node-RED workflows. This library provides a
 ## Installation
 
 ```bash
-go get github.com/yourusername/yoyo-nodered-wrapper
+go get github.com/yoyo-mq/go-nodered-wrapper
 ```
 
 ## Quick Start
