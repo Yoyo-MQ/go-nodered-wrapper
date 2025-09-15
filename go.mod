@@ -1,4 +1,4 @@
-module github.com/yourusername/yoyo-nodered-wrapper
+module github.com/yoyo-mq/go-nodered-wrapper
 
 go 1.21
 
