@@ -1,0 +1,38 @@
+# Node-RED Wrapper Configuration
+
+# Node-RED instance configuration
+node_red:
+  url: "http://localhost:1880"
+  api_key: ""  # Optional API key for authentication
+  timeout: "30s"
+  retry_attempts: 3
+
+# Debug settings
+debug: false
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json, text
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  metrics_port: 8080
+  health_check_interval: "30s"
+
+# Default execution options
+execution:
+  default_timeout: "60s"
+  async: false
+  retry_policy:
+    max_retries: 3
+    initial_delay: "1s"
+    max_delay: "30s"
+    backoff_factor: 2.0
+
+# Circuit breaker configuration
+circuit_breaker:
+  max_failures: 5
+  timeout: "60s"
+  reset_timeout: "300s"
