@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
-	nodered "github.com/yourusername/yoyo-nodered-wrapper/pkg/wrapper"
+	nodered "github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
 )
 
 // YoyoWorkflow represents a Yoyo workflow that can be converted to Node-RED

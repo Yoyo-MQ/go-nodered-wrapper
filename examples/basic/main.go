@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
-	nodered "github.com/yourusername/yoyo-nodered-wrapper/pkg/wrapper"
+	nodered "github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
 )
 
 func main() {
