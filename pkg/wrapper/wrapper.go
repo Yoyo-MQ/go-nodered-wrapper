@@ -183,3 +183,21 @@ func (w *NodeRedWrapper) SetExecutor(executor ExecutionHandler) {
 		w.executor = executor
 	}
 }
+
+// Authenticate authenticates with Node-RED using username/password
+func (w *NodeRedWrapper) Authenticate(ctx context.Context, username, password string) error {
+	// Call the client's GetAuthToken method directly
+	token, err := w.client.GetAuthToken(ctx, username, password)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Update the config with the token
+	w.config.APIKey = token
+	return nil
+}
+
+// GetClient returns the internal Node-RED client (for advanced usage)
+func (w *NodeRedWrapper) GetClient() interface{} {
+	return w.client
+}
