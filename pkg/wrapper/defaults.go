@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 )
 
 // DefaultConverter provides a basic implementation of WorkflowConverter
