@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 	nodered "github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
-	"github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper/pkg/types"
 )
 
 func main() {
