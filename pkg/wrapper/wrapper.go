@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourusername/yoyo-nodered-wrapper/internal/client"
-	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/internal/client"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 )
 
 // NodeRedWrapper provides a high-level interface for managing Node-RED workflows

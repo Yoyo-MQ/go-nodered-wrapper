@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 	nodered "github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
 )
 

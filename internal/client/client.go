@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/yourusername/yoyo-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 )
 
 // NodeRedClient handles communication with Node-RED
