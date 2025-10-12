@@ -1,6 +1,6 @@
-# Yoyo Node-RED Wrapper
+# Node-RED Wrapper
 
-A high-level Go wrapper for managing Node-RED workflows. This library provides a clean, idiomatic Go interface for deploying, executing, and managing Node-RED flows.
+A high-level Go wrapper for managing Node-RED workflows. This library provides a clean, idiomatic Go interface for deploying, executing, and managing Node-RED flows with built-in debug message handling.
 
 ## Features
 
@@ -72,7 +72,7 @@ func main() {
 
 - [Basic Usage](examples/basic/)
 - [Advanced Configuration](examples/advanced/)
-- [Yoyo Integration](examples/yoyo-integration/)
+- [Custom Integration](examples/custom-integration/)
 
 ## Documentation
 

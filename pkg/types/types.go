@@ -1,6 +1,8 @@
 package types
 
-import "time"
+import (
+	"time"
+)
 
 // FlowDefinition represents a Node-RED flow
 type FlowDefinition struct {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
@@ -34,12 +35,20 @@ func NewNodeRedClient(config *types.Config) (*NodeRedClient, error) {
 	}, nil
 }
 
-// DeployFlow deploys a flow to Node-RED
+// DeployFlow deploys or updates a flow in Node-RED
 func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefinition) error {
-	url := fmt.Sprintf("%s/flows", c.baseURL)
+	// Node-RED expects a flat array of nodes, not a FlowDefinition object
+	// Convert FlowDefinition to Node-RED format
+	nodeRedNodes := c.convertFlowToNodeRedFormat(flow)
 
+	// For /flow endpoint, send the tab node and its children as nodes array
 	payload := map[string]interface{}{
-		"flows": []*types.FlowDefinition{flow},
+		"id":    flow.ID,
+		"label": flow.Name,
+		"nodes": nodeRedNodes[1:], // Skip the tab node itself, just send the child nodes
+	}
+	if flow.Description != "" {
+		payload["info"] = flow.Description
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -47,11 +56,15 @@ func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefiniti
 		return fmt.Errorf("failed to marshal flow: %w", err)
 	}
 
+	// Try to update first (PUT /flow/:id) - this works for existing flows
+	url := fmt.Sprintf("%s/flow/%s", c.baseURL, flow.ID)
+	method := "PUT"
+
 	if c.debug {
-		fmt.Printf("Deploying flow to %s: %s\n", url, string(jsonData))
+		fmt.Printf("Deploying flow to %s using %s: %s\n", url, method, string(jsonData))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -67,11 +80,92 @@ func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefiniti
 	}
 	defer resp.Body.Close()
 
+	// If flow doesn't exist (404), try creating it with POST
+	if resp.StatusCode == http.StatusNotFound {
+		if c.debug {
+			fmt.Println("Flow not found, creating new flow with POST")
+		}
+		return c.createFlow(ctx, flow, payload, jsonData)
+	}
+
+	// /flow endpoint returns 200 for success
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to deploy flow: status %d", resp.StatusCode)
+		// Try to read error body
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to deploy flow: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
+}
+
+// createFlow creates a new flow using POST /flow
+func (c *NodeRedClient) createFlow(ctx context.Context, flow *types.FlowDefinition, payload map[string]interface{}, jsonData []byte) error {
+	url := fmt.Sprintf("%s/flow", c.baseURL)
+
+	if c.debug {
+		fmt.Printf("Creating new flow at %s: %s\n", url, string(jsonData))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to create flow: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create flow: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// convertFlowToNodeRedFormat converts a FlowDefinition to Node-RED's expected format
+func (c *NodeRedClient) convertFlowToNodeRedFormat(flow *types.FlowDefinition) []map[string]interface{} {
+	var nodeRedNodes []map[string]interface{}
+
+	// Add a tab (flow container) node
+	tabNode := map[string]interface{}{
+		"id":    flow.ID,
+		"type":  "tab",
+		"label": flow.Name,
+	}
+	if flow.Description != "" {
+		tabNode["info"] = flow.Description
+	}
+	nodeRedNodes = append(nodeRedNodes, tabNode)
+
+	// Convert each node
+	for _, node := range flow.Nodes {
+		nodeRedNode := map[string]interface{}{
+			"id":    node.ID,
+			"type":  node.Type,
+			"name":  node.Name,
+			"x":     node.Position.X,
+			"y":     node.Position.Y,
+			"z":     flow.ID, // Link node to the tab/flow
+			"wires": node.Wires,
+		}
+
+		// Add all properties from the node
+		for key, value := range node.Properties {
+			nodeRedNode[key] = value
+		}
+
+		nodeRedNodes = append(nodeRedNodes, nodeRedNode)
+	}
+
+	return nodeRedNodes
 }
 
 // ExecuteFlow triggers a flow execution
