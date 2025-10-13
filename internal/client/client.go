@@ -291,3 +291,60 @@ func (c *NodeRedClient) HealthCheck(ctx context.Context) error {
 
 	return nil
 }
+
+// GetAuthToken authenticates with Node-RED and returns an access token
+func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password string) (string, error) {
+	url := fmt.Sprintf("%s/auth/token", c.baseURL)
+
+	// Prepare authentication request payload
+	authPayload := map[string]interface{}{
+		"client_id":  "node-red-admin",
+		"grant_type": "password",
+		"scope":      "*",
+		"username":   username,
+		"password":   password,
+	}
+
+	jsonData, err := json.Marshal(authPayload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal auth payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create auth request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to authenticate: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("authentication failed: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse the response to extract the access token
+	var authResponse struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
+		return "", fmt.Errorf("failed to decode auth response: %w", err)
+	}
+
+	if authResponse.AccessToken == "" {
+		return "", fmt.Errorf("no access token in auth response")
+	}
+
+	// Update the client's API key
+	c.apiKey = authResponse.AccessToken
+
+	return authResponse.AccessToken, nil
+}
