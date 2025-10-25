@@ -36,13 +36,13 @@ func New(config *types.Config) (*NodeRedWrapper, error) {
 		return nil, fmt.Errorf("config is required")
 	}
 
-	client, err := client.NewNodeRedClient(config)
+	newClient, err := client.NewNodeRedClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Node-RED client: %w", err)
 	}
 
 	return &NodeRedWrapper{
-		client:    client,
+		client:    newClient,
 		converter: &DefaultConverter{},
 		executor:  &DefaultExecutor{},
 		config:    config,
