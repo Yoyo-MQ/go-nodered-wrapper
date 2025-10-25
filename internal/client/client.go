@@ -19,6 +19,13 @@ type NodeRedClient struct {
 	debug      bool
 }
 
+// closeResponseBody safely closes the response body and logs any errors
+func (c *NodeRedClient) closeResponseBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil && c.debug {
+		fmt.Printf("Warning: failed to close response body: %v\n", err)
+	}
+}
+
 // NewNodeRedClient creates a new Node-RED client
 func NewNodeRedClient(config *types.Config) (*NodeRedClient, error) {
 	if config.NodeRedURL == "" {
@@ -78,7 +85,7 @@ func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefiniti
 	if err != nil {
 		return fmt.Errorf("failed to deploy flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	// If flow doesn't exist (404), try creating it with POST
 	if resp.StatusCode == http.StatusNotFound {
@@ -123,7 +130,7 @@ func (c *NodeRedClient) createFlow(ctx context.Context, jsonData []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to create flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
@@ -201,7 +208,7 @@ func (c *NodeRedClient) ExecuteFlow(ctx context.Context, flowID string, input ma
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	var result types.ExecutionResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -238,7 +245,7 @@ func (c *NodeRedClient) TriggerNode(ctx context.Context, nodeID string, input ma
 	if err != nil {
 		return fmt.Errorf("failed to trigger node: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
@@ -268,7 +275,7 @@ func (c *NodeRedClient) GetFlow(ctx context.Context, flowID string) (*types.Flow
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("flow not found: %s", flowID)
@@ -303,7 +310,7 @@ func (c *NodeRedClient) GetFlows(ctx context.Context) ([]map[string]interface{},
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flows: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get flows: status %d", resp.StatusCode)
@@ -334,7 +341,7 @@ func (c *NodeRedClient) DeleteFlow(ctx context.Context, flowID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("flow not found: %s", flowID)
@@ -360,7 +367,7 @@ func (c *NodeRedClient) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to check health: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Node-RED is not healthy: status %d", resp.StatusCode)
@@ -398,7 +405,7 @@ func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password str
 	if err != nil {
 		return "", fmt.Errorf("failed to authenticate: %w", err)
 	}
-	defer resp.Body.Close()
+	defer c.closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
