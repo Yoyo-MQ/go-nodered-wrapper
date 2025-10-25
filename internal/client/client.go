@@ -91,7 +91,10 @@ func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefiniti
 	// /flow endpoint returns 200 for success
 	if resp.StatusCode != http.StatusOK {
 		// Try to read error body
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to deploy flow: status %d, failed to read error body: %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("failed to deploy flow: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -123,7 +126,10 @@ func (c *NodeRedClient) createFlow(ctx context.Context, jsonData []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create flow: status %d, failed to read error body: %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("failed to create flow: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -235,7 +241,10 @@ func (c *NodeRedClient) TriggerNode(ctx context.Context, nodeID string, input ma
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to trigger node: status %d, failed to read error body: %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("failed to trigger node: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -392,7 +401,10 @@ func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("authentication failed: status %d, failed to read error body: %w", resp.StatusCode, err)
+		}
 		return "", fmt.Errorf("authentication failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
