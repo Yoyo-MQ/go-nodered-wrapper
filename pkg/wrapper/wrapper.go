@@ -142,6 +142,15 @@ func (w *NodeRedWrapper) ExecuteWorkflow(ctx context.Context, workflow interface
 	return w.ExecuteFlow(ctx, flow.ID, input)
 }
 
+// TriggerNode triggers a specific node (like an inject node) with input data
+func (w *NodeRedWrapper) TriggerNode(ctx context.Context, nodeID string, input map[string]interface{}) error {
+	if nodeID == "" {
+		return fmt.Errorf("node ID is required")
+	}
+
+	return w.client.TriggerNode(ctx, nodeID, input)
+}
+
 // GetFlow retrieves a deployed flow
 func (w *NodeRedWrapper) GetFlow(ctx context.Context, flowID string) (*types.FlowDefinition, error) {
 	if flowID == "" {
@@ -149,6 +158,11 @@ func (w *NodeRedWrapper) GetFlow(ctx context.Context, flowID string) (*types.Flo
 	}
 
 	return w.client.GetFlow(ctx, flowID)
+}
+
+// GetFlows retrieves all deployed flows from Node-RED
+func (w *NodeRedWrapper) GetFlows(ctx context.Context) ([]map[string]interface{}, error) {
+	return w.client.GetFlows(ctx)
 }
 
 // DeleteFlow removes a flow from Node-RED

@@ -7,14 +7,17 @@ import (
 // FlowDefinition represents a Node-RED flow
 type FlowDefinition struct {
 	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Version     string                 `json:"version"`
-	Description string                 `json:"description"`
+	Name        string                 `json:"name,omitempty"`
+	Label       string                 `json:"label,omitempty"`
+	Version     string                 `json:"version,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Info        string                 `json:"info,omitempty"`
+	Disabled    bool                   `json:"disabled"`
 	Nodes       []Node                 `json:"nodes"`
-	Connections []Connection           `json:"connections"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	Connections []Connection           `json:"connections,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt   time.Time              `json:"created_at,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at,omitempty"`
 }
 
 // Node represents a Node-RED node
