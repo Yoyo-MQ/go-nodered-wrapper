@@ -11,7 +11,6 @@ import (
 	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 )
 
-// NodeRedClient handles communication with Node-RED
 type NodeRedClient struct {
 	baseURL    string
 	httpClient *http.Client
@@ -19,14 +18,6 @@ type NodeRedClient struct {
 	debug      bool
 }
 
-// closeResponseBody safely closes the response body and logs any errors
-func (c *NodeRedClient) closeResponseBody(resp *http.Response) {
-	if err := resp.Body.Close(); err != nil && c.debug {
-		fmt.Printf("Warning: failed to close response body: %v\n", err)
-	}
-}
-
-// NewNodeRedClient creates a new Node-RED client
 func NewNodeRedClient(config *types.Config) (*NodeRedClient, error) {
 	if config.NodeRedURL == "" {
 		return nil, fmt.Errorf("node_red_url is required")
@@ -42,17 +33,12 @@ func NewNodeRedClient(config *types.Config) (*NodeRedClient, error) {
 	}, nil
 }
 
-// DeployFlow deploys or updates a flow in Node-RED
-func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefinition) error {
-	// Node-RED expects a flat array of nodes, not a FlowDefinition object
-	// Convert FlowDefinition to Node-RED format
+func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefinition) (string, error) {
 	nodeRedNodes := c.convertFlowToNodeRedFormat(flow)
-
-	// For /flow endpoint, send the tab node and its children as nodes array
 	payload := map[string]interface{}{
 		"id":    flow.ID,
 		"label": flow.Name,
-		"nodes": nodeRedNodes[1:], // Skip the tab node itself, just send the child nodes
+		"nodes": nodeRedNodes[1:],
 	}
 	if flow.Description != "" {
 		payload["info"] = flow.Description
@@ -60,190 +46,138 @@ func (c *NodeRedClient) DeployFlow(ctx context.Context, flow *types.FlowDefiniti
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal flow: %w", err)
+		return "", fmt.Errorf("failed to marshal flow: %w", err)
 	}
 
-	// Try to update first (PUT /flow/:id) - this works for existing flows
 	url := fmt.Sprintf("%s/flow/%s", c.baseURL, flow.ID)
-	method := "PUT"
-
-	if c.debug {
-		fmt.Printf("Deploying flow to %s using %s: %s\n", url, method, string(jsonData))
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(jsonData))
+	resp, err := c.doRequest(ctx, "PUT", url, jsonData)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to deploy flow: %w", err)
+		return "", err
 	}
 	defer c.closeResponseBody(resp)
 
-	// If flow doesn't exist (404), try creating it with POST
-	if resp.StatusCode == http.StatusNotFound {
+	switch resp.StatusCode {
+	case http.StatusNotFound:
 		if c.debug {
 			fmt.Println("Flow not found, creating new flow with POST")
 		}
 		return c.createFlow(ctx, jsonData)
-	}
-
-	// /flow endpoint returns 200 for success
-	if resp.StatusCode != http.StatusOK {
-		// Try to read error body
+	case http.StatusBadRequest:
+		if c.debug {
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Flow deployment returned 400, attempting to delete and recreate: %s\n", string(body))
+		}
+		_ = c.DeleteFlow(ctx, flow.ID)
+		return c.createFlow(ctx, jsonData)
+	case http.StatusOK:
+		return flow.ID, nil
+	default:
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to deploy flow: status %d, failed to read error body: %w", resp.StatusCode, err)
+			return "", fmt.Errorf("failed to deploy flow: status %d, failed to read error body: %w", resp.StatusCode, err)
 		}
-		return fmt.Errorf("failed to deploy flow: status %d, body: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("failed to deploy flow: status %d, body: %s", resp.StatusCode, string(body))
 	}
-
-	return nil
 }
 
-// createFlow creates a new flow using POST /flow
-func (c *NodeRedClient) createFlow(ctx context.Context, jsonData []byte) error {
-	url := fmt.Sprintf("%s/flow", c.baseURL)
+func (c *NodeRedClient) createFlow(ctx context.Context, jsonData []byte) (string, error) {
+	return c.createFlowWithRetry(ctx, jsonData, false)
+}
 
+func (c *NodeRedClient) createFlowWithRetry(ctx context.Context, jsonData []byte, isRetry bool) (string, error) {
+	url := fmt.Sprintf("%s/flow", c.baseURL)
 	if c.debug {
 		fmt.Printf("Creating new flow at %s: %s\n", url, string(jsonData))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	resp, err := c.doRequest(ctx, "POST", url, jsonData)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to create flow: %w", err)
+		return "", err
 	}
 	defer c.closeResponseBody(resp)
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusBadRequest && !isRetry {
+		if c.debug {
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Flow creation returned 400, attempting to delete and recreate: %s\n", string(body))
+		}
+
+		var payload map[string]interface{}
+		if err := json.Unmarshal(jsonData, &payload); err == nil {
+			if flowID, ok := payload["id"].(string); ok {
+				_ = c.DeleteFlow(ctx, flowID)
+				return c.createFlowWithRetry(ctx, jsonData, true)
+			}
+		}
+		return "", fmt.Errorf("failed to create flow: status %d", resp.StatusCode)
+	}
+
+	if resp.StatusCode == http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to create flow: status %d, failed to read error body: %w", resp.StatusCode, err)
+			return "", fmt.Errorf("failed to read response body: %w", err)
 		}
-		return fmt.Errorf("failed to create flow: status %d, body: %s", resp.StatusCode, string(body))
+
+		if len(body) > 0 {
+			var response struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(body, &response); err == nil && response.ID != "" {
+				if c.debug {
+					fmt.Printf("Flow created with ID: %s\n", response.ID)
+				}
+				return response.ID, nil
+			}
+		}
+		return "", nil
 	}
 
-	return nil
+	if resp.StatusCode == http.StatusNoContent {
+		return "", nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to create flow: status %d, failed to read error body: %w", resp.StatusCode, err)
+	}
+	return "", fmt.Errorf("failed to create flow: status %d, body: %s", resp.StatusCode, string(body))
 }
 
-// convertFlowToNodeRedFormat converts a FlowDefinition to Node-RED's expected format
-func (c *NodeRedClient) convertFlowToNodeRedFormat(flow *types.FlowDefinition) []map[string]interface{} {
-	var nodeRedNodes []map[string]interface{}
-
-	// Add a tab (flow container) node
-	tabNode := map[string]interface{}{
-		"id":    flow.ID,
-		"type":  "tab",
-		"label": flow.Name,
-	}
-	if flow.Description != "" {
-		tabNode["info"] = flow.Description
-	}
-	nodeRedNodes = append(nodeRedNodes, tabNode)
-
-	// Convert each node
-	for _, node := range flow.Nodes {
-		nodeRedNode := map[string]interface{}{
-			"id":    node.ID,
-			"type":  node.Type,
-			"name":  node.Name,
-			"x":     node.Position.X,
-			"y":     node.Position.Y,
-			"z":     flow.ID, // Link node to the tab/flow
-			"wires": node.Wires,
-		}
-
-		// Add all properties from the node
-		for key, value := range node.Properties {
-			nodeRedNode[key] = value
-		}
-
-		nodeRedNodes = append(nodeRedNodes, nodeRedNode)
-	}
-
-	return nodeRedNodes
-}
-
-// ExecuteFlow triggers a flow execution
 func (c *NodeRedClient) ExecuteFlow(ctx context.Context, flowID string, input map[string]interface{}) (*types.ExecutionResult, error) {
-	url := fmt.Sprintf("%s/flows/%s/execute", c.baseURL, flowID)
-
-	jsonData, err := json.Marshal(input)
+	flow, err := c.GetFlow(ctx, flowID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal input: %w", err)
+		return nil, fmt.Errorf("failed to get flow: %w", err)
 	}
 
-	if c.debug {
-		fmt.Printf("Executing flow %s: %s\n", flowID, string(jsonData))
+	for _, node := range flow.Nodes {
+		if node.Type == "inject" {
+			if err := c.TriggerNode(ctx, node.ID, input); err != nil {
+				return nil, fmt.Errorf("failed to trigger inject node: %w", err)
+			}
+			return &types.ExecutionResult{
+				Success: true,
+				Output:  input,
+			}, nil
+		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute flow: %w", err)
-	}
-	defer c.closeResponseBody(resp)
-
-	var result types.ExecutionResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
+	return nil, fmt.Errorf("no inject node found in flow %s", flowID)
 }
 
-// TriggerNode triggers a specific node (like an inject node) with input data
 func (c *NodeRedClient) TriggerNode(ctx context.Context, nodeID string, input map[string]interface{}) error {
-	url := fmt.Sprintf("%s/inject/%s", c.baseURL, nodeID)
-
 	jsonData, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("failed to marshal input: %w", err)
 	}
 
+	url := fmt.Sprintf("%s/inject/%s", c.baseURL, nodeID)
 	if c.debug {
 		fmt.Printf("Triggering node %s: %s\n", nodeID, string(jsonData))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	resp, err := c.doRequest(ctx, "POST", url, jsonData)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to trigger node: %w", err)
+		return err
 	}
 	defer c.closeResponseBody(resp)
 
@@ -254,61 +188,36 @@ func (c *NodeRedClient) TriggerNode(ctx context.Context, nodeID string, input ma
 		}
 		return fmt.Errorf("failed to trigger node: status %d, body: %s", resp.StatusCode, string(body))
 	}
-
 	return nil
 }
 
-// GetFlow retrieves a deployed flow
 func (c *NodeRedClient) GetFlow(ctx context.Context, flowID string) (*types.FlowDefinition, error) {
-	url := fmt.Sprintf("%s/flow/%s", c.baseURL, flowID)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	flows, err := c.GetFlows(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	for _, flowNode := range flows {
+		nodeID, _ := flowNode["id"].(string)
+		nodeType, _ := flowNode["type"].(string)
+		if nodeID == flowID && nodeType == "tab" {
+			nodes := c.collectNodesForFlow(flows, flowID)
+			return &types.FlowDefinition{
+				ID:          flowID,
+				Name:        getString(flowNode, "label"),
+				Description: getString(flowNode, "info"),
+				Nodes:       nodes,
+			}, nil
+		}
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get flow: %w", err)
-	}
-	defer c.closeResponseBody(resp)
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("flow not found: %s", flowID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get flow: status %d", resp.StatusCode)
-	}
-
-	var flow types.FlowDefinition
-	if err := json.NewDecoder(resp.Body).Decode(&flow); err != nil {
-		return nil, fmt.Errorf("failed to decode flow: %w", err)
-	}
-
-	return &flow, nil
+	return nil, fmt.Errorf("flow not found: %s", flowID)
 }
 
-// GetFlows retrieves all deployed flows from Node-RED
 func (c *NodeRedClient) GetFlows(ctx context.Context) ([]map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/flows", c.baseURL)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("%s/flows", c.baseURL), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get flows: %w", err)
+		return nil, err
 	}
 	defer c.closeResponseBody(resp)
 
@@ -318,28 +227,17 @@ func (c *NodeRedClient) GetFlows(ctx context.Context) ([]map[string]interface{},
 
 	var flows []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&flows); err != nil {
-		return nil, fmt.Errorf("failed to decode flows response: %w", err)
+		return nil, fmt.Errorf("failed to decode flows: %w", err)
 	}
 
 	return flows, nil
 }
 
-// DeleteFlow removes a flow from Node-RED
 func (c *NodeRedClient) DeleteFlow(ctx context.Context, flowID string) error {
 	url := fmt.Sprintf("%s/flows/%s", c.baseURL, flowID)
-
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	resp, err := c.doRequest(ctx, "DELETE", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to delete flow: %w", err)
+		return err
 	}
 	defer c.closeResponseBody(resp)
 
@@ -354,33 +252,26 @@ func (c *NodeRedClient) DeleteFlow(ctx context.Context, flowID string) error {
 	return nil
 }
 
-// HealthCheck checks if Node-RED is healthy
 func (c *NodeRedClient) HealthCheck(ctx context.Context) error {
-	url := fmt.Sprintf("%s/health", c.baseURL)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	baseURL := c.baseURL
+	if len(baseURL) > 6 && baseURL[len(baseURL)-6:] == "/admin" {
+		baseURL = baseURL[:len(baseURL)-6]
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "GET", baseURL+"/", nil)
 	if err != nil {
-		return fmt.Errorf("failed to check health: %w", err)
+		return err
 	}
 	defer c.closeResponseBody(resp)
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusUnauthorized {
 		return fmt.Errorf("Node-RED is not healthy: status %d", resp.StatusCode)
 	}
 
 	return nil
 }
 
-// GetAuthToken authenticates with Node-RED and returns an access token
 func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password string) (string, error) {
-	url := fmt.Sprintf("%s/auth/token", c.baseURL)
-
-	// Prepare authentication request payload
 	authPayload := map[string]interface{}{
 		"client_id":  "node-red-admin",
 		"grant_type": "password",
@@ -394,16 +285,10 @@ func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password str
 		return "", fmt.Errorf("failed to marshal auth payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	url := fmt.Sprintf("%s/auth/token", c.baseURL)
+	resp, err := c.doRequest(ctx, "POST", url, jsonData)
 	if err != nil {
-		return "", fmt.Errorf("failed to create auth request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to authenticate: %w", err)
+		return "", err
 	}
 	defer c.closeResponseBody(resp)
 
@@ -415,7 +300,6 @@ func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password str
 		return "", fmt.Errorf("authentication failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse the response to extract the access token
 	var authResponse struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
@@ -430,8 +314,133 @@ func (c *NodeRedClient) GetAuthToken(ctx context.Context, username, password str
 		return "", fmt.Errorf("no access token in auth response")
 	}
 
-	// Update the client's API key
 	c.apiKey = authResponse.AccessToken
-
 	return authResponse.AccessToken, nil
+}
+
+func (c *NodeRedClient) convertFlowToNodeRedFormat(flow *types.FlowDefinition) []map[string]interface{} {
+	var nodeRedNodes []map[string]interface{}
+
+	tabNode := map[string]interface{}{
+		"id":    flow.ID,
+		"type":  "tab",
+		"label": flow.Name,
+	}
+	if flow.Description != "" {
+		tabNode["info"] = flow.Description
+	}
+	nodeRedNodes = append(nodeRedNodes, tabNode)
+
+	for _, node := range flow.Nodes {
+		nodeRedNode := map[string]interface{}{
+			"id":    node.ID,
+			"type":  node.Type,
+			"name":  node.Name,
+			"x":     node.Position.X,
+			"y":     node.Position.Y,
+			"z":     flow.ID,
+			"wires": node.Wires,
+		}
+
+		for key, value := range node.Properties {
+			nodeRedNode[key] = value
+		}
+
+		nodeRedNodes = append(nodeRedNodes, nodeRedNode)
+	}
+
+	return nodeRedNodes
+}
+
+func (c *NodeRedClient) collectNodesForFlow(flows []map[string]interface{}, flowID string) []types.Node {
+	var nodes []types.Node
+
+	for _, node := range flows {
+		z, _ := node["z"].(string)
+		if z != flowID {
+			continue
+		}
+
+		nodeObj := types.Node{
+			ID:   getString(node, "id"),
+			Type: getString(node, "type"),
+			Name: getString(node, "name"),
+			Position: types.Position{
+				X: getFloat64(node, "x"),
+				Y: getFloat64(node, "y"),
+			},
+			Properties: make(map[string]interface{}),
+		}
+
+		for k, v := range node {
+			if k != "id" && k != "type" && k != "name" && k != "x" && k != "y" && k != "z" && k != "wires" {
+				nodeObj.Properties[k] = v
+			}
+		}
+
+		if wires, ok := node["wires"].([]interface{}); ok {
+			nodeObj.Wires = make([][]string, len(wires))
+			for i, wire := range wires {
+				if wireArr, ok := wire.([]interface{}); ok {
+					nodeObj.Wires[i] = make([]string, len(wireArr))
+					for j, w := range wireArr {
+						if wStr, ok := w.(string); ok {
+							nodeObj.Wires[i][j] = wStr
+						}
+					}
+				}
+			}
+		}
+
+		nodes = append(nodes, nodeObj)
+	}
+
+	return nodes
+}
+
+func (c *NodeRedClient) doRequest(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewBuffer(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+
+	return resp, nil
+}
+
+func (c *NodeRedClient) closeResponseBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil && c.debug {
+		fmt.Printf("Warning: failed to close response body: %v\n", err)
+	}
+}
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getFloat64(m map[string]interface{}, key string) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	if v, ok := m[key].(int); ok {
+		return float64(v)
+	}
+	return 0
 }

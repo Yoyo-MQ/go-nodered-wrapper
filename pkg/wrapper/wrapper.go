@@ -3,6 +3,7 @@ package wrapper
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/yoyo-mq/go-nodered-wrapper/internal/client"
@@ -78,23 +79,25 @@ func NewWithExecutor(config *types.Config, executor ExecutionHandler) (*NodeRedW
 }
 
 // DeployFlow deploys a workflow to Node-RED
-func (w *NodeRedWrapper) DeployFlow(ctx context.Context, flow *types.FlowDefinition) error {
+// Returns the flow tab ID assigned by Node-RED (which may differ from the requested ID)
+func (w *NodeRedWrapper) DeployFlow(ctx context.Context, flow *types.FlowDefinition) (string, error) {
 	if flow == nil {
-		return fmt.Errorf("flow is required")
+		return "", fmt.Errorf("flow is required")
 	}
 
 	if flow.ID == "" {
-		return fmt.Errorf("flow ID is required")
+		return "", fmt.Errorf("flow ID is required")
 	}
 
 	return w.client.DeployFlow(ctx, flow)
 }
 
 // DeployWorkflow deploys a workflow using the converter
-func (w *NodeRedWrapper) DeployWorkflow(ctx context.Context, workflow interface{}) error {
+// Returns the flow tab ID assigned by Node-RED
+func (w *NodeRedWrapper) DeployWorkflow(ctx context.Context, workflow interface{}) (string, error) {
 	flow, err := w.converter.ConvertToNodeRedFlow(workflow)
 	if err != nil {
-		return fmt.Errorf("failed to convert workflow: %w", err)
+		return "", fmt.Errorf("failed to convert workflow: %w", err)
 	}
 
 	return w.DeployFlow(ctx, flow)
@@ -153,9 +156,11 @@ func (w *NodeRedWrapper) TriggerNode(ctx context.Context, nodeID string, input m
 
 // GetFlow retrieves a deployed flow
 func (w *NodeRedWrapper) GetFlow(ctx context.Context, flowID string) (*types.FlowDefinition, error) {
+	fmt.Println(strings.Repeat("--", 30), flowID)
 	if flowID == "" {
 		return nil, fmt.Errorf("flow ID is required")
 	}
+	fmt.Println(strings.Repeat("--", 30), flowID)
 
 	return w.client.GetFlow(ctx, flowID)
 }
