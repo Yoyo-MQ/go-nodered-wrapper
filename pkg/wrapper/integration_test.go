@@ -1,17 +1,24 @@
-package main
+package wrapper_test
 
 import (
 	"context"
 	"fmt"
-	"log"
+	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
 	"github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
 )
 
-func main() {
-	log.Println("🧪 Testing Node-RED Wrapper Integration...")
+func TestIntegration(t *testing.T) {
+	// Skip integration tests in short mode
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	t.Log("🧪 Testing Node-RED Wrapper Integration...")
 
 	// Create configuration for Node-RED
 	config := &types.Config{
@@ -22,47 +29,43 @@ func main() {
 	}
 
 	// Create wrapper instance
-	log.Println("📦 Creating Node-RED wrapper...")
+	t.Log("📦 Creating Node-RED wrapper...")
 	nodeRedWrapper, err := wrapper.New(config)
-	if err != nil {
-		log.Fatalf("❌ Failed to create Node-RED wrapper: %v", err)
-	}
+	require.NoError(t, err, "Failed to create Node-RED wrapper")
 
 	// Test health check first
-	log.Println("🏥 Testing Node-RED health check...")
+	t.Log("🏥 Testing Node-RED health check...")
 	ctx := context.Background()
 	if err := nodeRedWrapper.HealthCheck(ctx); err != nil {
-		log.Printf("⚠️  Health check failed: %v", err)
-		log.Println("📝 Continuing with flow deployment test anyway...")
+		t.Logf("⚠️  Health check failed: %v", err)
+		t.Log("📝 Continuing with flow deployment test anyway...")
 	} else {
-		log.Println("✅ Node-RED health check passed!")
+		t.Log("✅ Node-RED health check passed!")
 	}
 
 	// Create a simple test flow
-	log.Println("🔧 Creating simple test flow...")
+	t.Log("🔧 Creating simple test flow...")
 	testFlow := createSimpleTestFlow()
 
 	// Deploy the flow
-	log.Println("🚀 Deploying test flow to Node-RED...")
-	if err := nodeRedWrapper.DeployFlow(ctx, testFlow); err != nil {
-		log.Fatalf("❌ Failed to deploy flow: %v", err)
-	}
+	t.Log("🚀 Deploying test flow to Node-RED...")
+	_, err = nodeRedWrapper.DeployFlow(ctx, testFlow)
+	require.NoError(t, err, "Failed to deploy flow")
 
-	log.Printf("✅ Successfully deployed flow '%s' to Node-RED!", testFlow.Name)
-	log.Printf("🎯 Flow ID: %s", testFlow.ID)
-	log.Println("📋 You can now check the Node-RED UI at http://localhost:1880/admin/ to see the deployed flow!")
+	t.Logf("✅ Successfully deployed flow '%s' to Node-RED!", testFlow.Name)
+	t.Logf("🎯 Flow ID: %s", testFlow.ID)
 
 	// Try to retrieve the deployed flow
-	log.Println("🔍 Retrieving deployed flow...")
+	t.Log("🔍 Retrieving deployed flow...")
 	retrievedFlow, err := nodeRedWrapper.GetFlow(ctx, testFlow.ID)
 	if err != nil {
-		log.Printf("⚠️  Failed to retrieve flow: %v", err)
+		t.Logf("⚠️  Failed to retrieve flow: %v", err)
 	} else {
-		log.Printf("✅ Successfully retrieved flow: %s", retrievedFlow.Name)
+		t.Logf("✅ Successfully retrieved flow: %s", retrievedFlow.Name)
 	}
 
 	// Test execution with sample data
-	log.Println("▶️  Testing flow execution...")
+	t.Log("▶️  Testing flow execution...")
 	sampleInput := map[string]interface{}{
 		"temperature": 25.5,
 		"humidity":    60.0,
@@ -72,17 +75,14 @@ func main() {
 
 	result, err := nodeRedWrapper.ExecuteFlow(ctx, testFlow.ID, sampleInput)
 	if err != nil {
-		log.Printf("⚠️  Flow execution failed: %v", err)
+		t.Logf("⚠️  Flow execution failed: %v", err)
 	} else {
-		log.Printf("✅ Flow executed successfully!")
-		log.Printf("📊 Execution result: %+v", result)
+		t.Log("✅ Flow executed successfully!")
+		t.Logf("📊 Execution result: %+v", result)
+		assert.NotNil(t, result)
 	}
 
-	log.Println("🎉 Node-RED integration test completed!")
-	log.Println("👀 Check the Node-RED UI to see your deployed flow:")
-	log.Println("   URL: http://localhost:1880/admin/")
-	log.Println("   Username: admin")
-	log.Println("   Password: password")
+	t.Log("🎉 Node-RED integration test completed!")
 }
 
 // createSimpleTestFlow creates a basic test flow for demonstration

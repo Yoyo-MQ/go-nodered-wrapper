@@ -1,6 +1,7 @@
 package types
 
 import (
+	"log/slog"
 	"time"
 )
 
@@ -69,6 +70,7 @@ type Config struct {
 	Timeout       time.Duration `yaml:"timeout" json:"timeout"`
 	RetryAttempts int           `yaml:"retry_attempts" json:"retry_attempts"`
 	Debug         bool          `yaml:"debug" json:"debug"`
+	Logger        *slog.Logger  `json:"-" yaml:"-"`
 }
 
 // ExecutionOptions holds options for flow execution

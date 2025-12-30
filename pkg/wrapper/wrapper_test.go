@@ -1,4 +1,4 @@
-package wrapper
+package wrapper_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yoyo-mq/go-nodered-wrapper/pkg/types"
+	"github.com/yoyo-mq/go-nodered-wrapper/pkg/wrapper"
 )
 
 func TestNew(t *testing.T) {
@@ -44,17 +45,39 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wrapper, err := New(tt.config)
+			w, err := wrapper.New(tt.config)
 			if tt.wantErr {
 				assert.Error(t, err)
-				assert.Nil(t, wrapper)
+				assert.Nil(t, w)
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, wrapper)
-				assert.Equal(t, tt.config, wrapper.GetConfig())
+				assert.NotNil(t, w)
+				assert.Equal(t, tt.config, w.GetConfig())
 			}
 		})
 	}
+}
+
+func TestNewWithCustomOptions(t *testing.T) {
+	config := &types.Config{
+		NodeRedURL: "http://localhost:1880",
+		APIKey:     "test-key",
+		Timeout:    30 * time.Second,
+	}
+
+	t.Run("NewWithConverter", func(t *testing.T) {
+		converter := &wrapper.DefaultConverter{}
+		w, err := wrapper.NewWithConverter(config, converter)
+		assert.NoError(t, err)
+		assert.NotNil(t, w)
+	})
+
+	t.Run("NewWithExecutor", func(t *testing.T) {
+		executor := &wrapper.DefaultExecutor{}
+		w, err := wrapper.NewWithExecutor(config, executor)
+		assert.NoError(t, err)
+		assert.NotNil(t, w)
+	})
 }
 
 func TestNodeRedWrapper_DeployFlow(t *testing.T) {
@@ -65,7 +88,7 @@ func TestNodeRedWrapper_DeployFlow(t *testing.T) {
 		Debug:      true,
 	}
 
-	wrapper, err := New(config)
+	w, err := wrapper.New(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -100,7 +123,7 @@ func TestNodeRedWrapper_DeployFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Note: This will fail in real test since we don't have a running Node-RED instance
 			// In a real test, you would use a mock client
-			err := wrapper.DeployFlow(context.Background(), tt.flow)
+			_, err := w.DeployFlow(context.Background(), tt.flow)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -119,7 +142,7 @@ func TestNodeRedWrapper_ExecuteFlow(t *testing.T) {
 		Debug:      true,
 	}
 
-	wrapper, err := New(config)
+	w, err := wrapper.New(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -148,7 +171,7 @@ func TestNodeRedWrapper_ExecuteFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Note: This will fail in real test since we don't have a running Node-RED instance
 			// In a real test, you would use a mock client
-			result, err := wrapper.ExecuteFlow(context.Background(), tt.flowID, tt.input)
+			result, err := w.ExecuteFlow(context.Background(), tt.flowID, tt.input)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, result)
@@ -162,7 +185,7 @@ func TestNodeRedWrapper_ExecuteFlow(t *testing.T) {
 }
 
 func TestDefaultConverter(t *testing.T) {
-	converter := &DefaultConverter{}
+	converter := &wrapper.DefaultConverter{}
 
 	t.Run("convert FlowDefinition", func(t *testing.T) {
 		flow := &types.FlowDefinition{
@@ -199,7 +222,7 @@ func TestDefaultConverter(t *testing.T) {
 }
 
 func TestDefaultExecutor(t *testing.T) {
-	executor := &DefaultExecutor{}
+	executor := &wrapper.DefaultExecutor{}
 
 	t.Run("pre-execute", func(t *testing.T) {
 		err := executor.PreExecute(context.Background(), map[string]interface{}{})

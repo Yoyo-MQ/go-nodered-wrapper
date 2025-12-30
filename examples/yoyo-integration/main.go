@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Deploy the workflow
-	err = wrapper.DeployFlow(context.Background(), flow)
+	_, err = wrapper.DeployFlow(context.Background(), flow)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -48,7 +48,7 @@ func main() {
 
 	case "deploy":
 		flow := createExampleFlow(*flowID)
-		if err := wrapper.DeployFlow(ctx, flow); err != nil {
+		if _, err := wrapper.DeployFlow(ctx, flow); err != nil {
 			log.Fatal("Failed to deploy flow:", err)
 		}
 		fmt.Printf("✅ Flow '%s' deployed successfully!\n", *flowID)

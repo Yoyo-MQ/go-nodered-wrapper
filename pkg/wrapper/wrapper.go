@@ -3,7 +3,6 @@ package wrapper
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/yoyo-mq/go-nodered-wrapper/internal/client"
@@ -156,11 +155,9 @@ func (w *NodeRedWrapper) TriggerNode(ctx context.Context, nodeID string, input m
 
 // GetFlow retrieves a deployed flow
 func (w *NodeRedWrapper) GetFlow(ctx context.Context, flowID string) (*types.FlowDefinition, error) {
-	fmt.Println(strings.Repeat("--", 30), flowID)
 	if flowID == "" {
 		return nil, fmt.Errorf("flow ID is required")
 	}
-	fmt.Println(strings.Repeat("--", 30), flowID)
 
 	return w.client.GetFlow(ctx, flowID)
 }
